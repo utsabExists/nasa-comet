@@ -1,2 +1,5 @@
 # Ignore all train related fts file
-.fts
+*.fts
+
+# Ignore all files under data folder
+code/data/
