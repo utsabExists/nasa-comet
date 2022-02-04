@@ -17,8 +17,23 @@ import cv2
 import shutil
 import shapely.geometry as sp
 
+def GetCmtCategory(filename) :
+    f1 = open(filename, 'r')
+    lines = f1.readlines()
+    category = 'N'
+    cmtgroup = "unknown"
+    for line in lines :
+        if (line.startswith("#")) :
+            tokens = line.split(":")
+            if (len(tokens) == 2 and "Brightness Category" in tokens[0]):
+                category = tokens[1].strip()
+            elif (len(tokens) == 2 and "Comet Group" in tokens[0]):
+                cmtgroup = tokens[1].strip()
+
+    return category, cmtgroup
+
 #from google.colab.patches import cv2_imshow
-def GenerateCometSequencesData(trainPath, truthfile) :
+def GenerateCometSequencesData(trainPath, truthfile, enableCategory) :
   data_set = []
   with open(truthfile, 'r') as f:
     lines = f.readlines()
@@ -40,39 +55,61 @@ def GenerateCometSequencesData(trainPath, truthfile) :
         seq["truth"] = truths
         if len(images)>0:
             data_set.append(seq)
+
+    if (enableCategory) :
+        for seq in data_set:
+            filepath = trainPath + "\\" + seq["ID"] + "\\" + seq["ID"] + ".txt"
+            category,group = GetCmtCategory(filepath)
+            seq["category"] = category
+            seq["group"] = group
+
   return data_set
 
 def drawCometSeq(img, cmtseq) :
   #index = 0
+  retval = True
   blobs = cmtseq["pos"]
+  if (len(blobs) < 5):
+      print("Rejected---------------------------------")
+      retval = False
+
   for i in range(1,len(blobs)) :
     y2, x2, r1 = blobs[i]
     y1, x1, r2 = blobs[i-1]
     #print("KK", x1,"-",y1,"---",x2,"-", y2)
     # note distance
-    # global train_dist
-    # dist = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-    # dist = int(dist/100)
-    # train_dist[dist] = train_dist[dist] + 1 if dist in train_dist else 1
+    global train_dist
+    dist = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+    #dist = int(dist/100)
+    #train_dist[dist] = train_dist[dist] + 1 if dist in train_dist else 1
 
-    # note angle
-    # if (i > 1) :
-    #     global train_angle
-    #     y0, x0, r0 = blobs[i-2]
-    #     v1 = [y2-y1, x2-x1]
-    #     v2 = [y0-y1, x0-x1]
-    #     v1 = v1 / np.linalg.norm(v1)
-    #     v2 = v2 / np.linalg.norm(v2)
-    #     dot_product = np.dot(v1, v2)
-    #     if dot_product > -1.0 or dot_product < 1.0:
-    #         angle = np.arccos(dot_product)
-    #         angle = int((np.pi-angle)/100)
-    #         train_angle[angle] = train_angle[angle] + 1 if angle in train_angle else 1
+    #note angle
+    if (i > 1) :
+        global train_angle
+        y0, x0, r0 = blobs[i-2]
+        v1 = [y2-y1, x2-x1]
+        v2 = [y0-y1, x0-x1]
+        v1 = v1 / np.linalg.norm(v1)
+        v2 = v2 / np.linalg.norm(v2)
+        dot_product = np.dot(v1, v2)
+        if ((dot_product <= -1.0 or dot_product >= 1.0) and dist > 60):
+            retval = False
+            print("Rejected---------------------------------")
+            #break
+        angle = np.arccos(dot_product)
+        if ((angle < np.pi - 0.3 or angle > np.pi + 0.3) and dist > 60):
+            #x = 1
+            retval = False
+            print("Rejected---------------------------------", angle)
+            #break
+            #angle = int((np.pi-angle)/100)
+            #train_angle[angle] = train_angle[angle] + 1 if angle in train_angle else 1
 
     cv2.line(img, (int(float(x1)),int(float(y1))), (int(float(x2)),int(float(y2))), (255,255,255))
     cv2.circle(img, (int(x1),int(y1)), 4, (255,255,255), cv2.FILLED)
+  return retval
 
-def processSeq(seq, outpath) :
+def processSeq1(seq, outpath) :
     print("Processing: " + seq["ID"])
     numImg = len(seq["path"])
     cmtseq = []
@@ -217,20 +254,32 @@ def write_to_file(cmtdict, filename) :
         f1.write('%s, ' % (val))
     f1.write("]\n")
 
-# def processSeq(seq, outpath) :
-#     print("Processing: " + seq["ID"])
-#     numImg = len(seq["path"])
-#     cmtseq = []
-#     for i in range(numImg):
-#         imgName = seq["images"][i]
-#         truthPoint = seq["truth"][imgName]
-#         cmtseq.append((float(truthPoint[1]), float(truthPoint[0]), 1))
+def processSeq(seq, outdir) :
+    print("Processing: " + seq["ID"] + " group: " + seq["group"])
+    numImg = len(seq["path"])
+    cmtseq = []
+    outpath = outdir # + "\\" + seq["group"] (Enable it if you need to generate by category)
+    if (not os.path.exists(outpath)):
+        os.mkdir(outpath, 777)
 
-#     blank_image = np.zeros((1024, 1024, 3), np.uint8)
-#     cmtdict = {}
-#     cmtdict["pos"] = cmtseq
-#     drawCometSeq(blank_image, cmtdict)
-#     cv2.imwrite(outpath + "\\" + seq["ID"]+".png", blank_image)
+    for i in range(numImg):
+        imgName = seq["images"][i]
+        truthPoint = seq["truth"][imgName]
+        cmtseq.append((float(truthPoint[1]), float(truthPoint[0]), 1))
+
+    blank_image = np.zeros((1024, 1024, 3), np.uint8)
+    cmtdict = {}
+    cmtdict["pos"] = cmtseq
+    retval = drawCometSeq(blank_image, cmtdict)
+    if (retval) :
+        cv2.imwrite(outpath + "\\" + seq["ID"]+".png", blank_image)
+    else :
+        rejectpath = outpath + "\\rejected"
+        if (not os.path.exists(rejectpath)):
+            os.mkdir(rejectpath, 777)
+        cv2.imwrite(rejectpath + "\\" + seq["ID"]+".png", blank_image)
+
+    return cmtdict
 
 #path = "/content/drive/MyDrive/Comet/train1/train"
 #truthfile = "/content/drive/MyDrive/Comet/train1/train-gt.txt"
@@ -241,7 +290,7 @@ train_angle = { }
 
 folder_in = sys.argv[1] + "\\train"
 truth_filename = sys.argv[1] + "\\train-gt.txt"
-train_dir = sys.argv[1] + "\\comet"
+train_dir = sys.argv[1] + "\\comet_normalized"
 train_info_file = sys.argv[1] + "\\train-info.txt"
 cmt_info_file = sys.argv[1] + "\\cmt-info.txt"
 
@@ -250,10 +299,10 @@ if (os.path.exists(train_dir)):
 
 os.mkdir(train_dir, 777)
 
-data_set = GenerateCometSequencesData(folder_in, truth_filename)
+data_set = GenerateCometSequencesData(folder_in, truth_filename, True)
 for seq in data_set :
     cmtdict = processSeq(seq, train_dir)
-    write_to_file(cmtdict, cmt_info_file)
+    #write_to_file(cmtdict, cmt_info_file)
 
 # Log train info in file
 sortedangle = sorted(train_angle.items())
@@ -268,3 +317,11 @@ for key, value in sorteddist:
     f1.write('%s:%s\n' % (key, value))
 #f1.write(train_dist)
 f1.close()
+
+
+
+
+# path = "C:\\github\\nasa-comet\\train1\\train\\cmt0006\\cmt0006.txt"
+# c,g = GetCmtCategory(path)
+# print(c)
+# print(g)

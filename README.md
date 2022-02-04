@@ -34,3 +34,13 @@ https://lasco-www.nrl.navy.mil/index.php?p=content/keywords
 7. Follow steps 2 to 7 for test data and generate a test set
 8. Run test set with ML model from 6 and identfiy all comets
 9. Post process each comet identified image and pot their original co-ordinates in solution file.
+
+# Comet characteristics :
+cmt734 -> Not a staright line (remove from training)
+cmt0983 > Is it same comet or 2 comets ?
+cmt1147 -> Verify what it is
+cmt1347 -> remove it (not straight line)
+cmt1618 -> Analyze
+cmt0215 -> Verify why this is getting rejected (during training)
+
+
