@@ -6,6 +6,7 @@ import os
 import math
 import random
 from math import sqrt
+from unittest import result
 from skimage import data
 from skimage.feature import blob_dog, blob_log, blob_doh
 from skimage.color import rgb2gray
@@ -21,7 +22,12 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # Enable to see debug info
-DEBUG = False
+SHORT_SEQ_LIMIT = 1 # change it to 5 (original)
+DEBUG = True
+
+def Log(msg) :
+    if DEBUG:
+        print("utbose: ", msg)
 
 def search_comet(seq, comets, idx, x, y, idata, dist, timestamp):
     ''' Recursively search through the frames for a comet.
@@ -60,7 +66,6 @@ def search_comet(seq, comets, idx, x, y, idata, dist, timestamp):
             sqdist = (py-y[-1])**2 + (px-x[-1])**2
             if sqdist<25: # must move at least 5 pixels
                 continue
-
             x.append(px)
             y.append(py)
             idata.append(idx)
@@ -74,16 +79,14 @@ def search_comet(seq, comets, idx, x, y, idata, dist, timestamp):
                 break
         return cometsFound
 
-    # Tracking two blobs, trying to add another within range and direction of travel.
-    # Then check the number of blobs on the extrapolated path
+    # Tracking two blobs, trying to add another within range and direction of travel. Then check the number of blobs on the extrapolated path
     if len(x)==2:
-
+        
         for blob in comets[idx]:
             py, px, pr = blob
             # Quick check for the distance from the previous blob
             if abs(py-y[-1])>40 or abs(px-x[-1])>40: 
                 continue
-
             # calculate expected distance of next blob
             sqrdist = np.sqrt((py-y[-1])**2 + (px-x[-1])**2)
             expdist = (seq["time"][idx] - timestamp[-1]) * dist / (timestamp[-1]-timestamp[0])
@@ -92,7 +95,6 @@ def search_comet(seq, comets, idx, x, y, idata, dist, timestamp):
             # Only allow matches within similar distances
             if sqrdist<10 or sqrdist<mindist or sqrdist>maxdist:
                 continue
-
             # check angle
             v1 = [py-y[-1], px-x[-1]]
             v2 = [y[0]-y[-1], x[0]-x[-1]]
@@ -101,7 +103,6 @@ def search_comet(seq, comets, idx, x, y, idata, dist, timestamp):
             dot_product = np.dot(v1, v2)
             if dot_product<=-1.0 or dot_product>=1.0:
                 continue
-
             angle = np.arccos(dot_product)
             if angle<np.pi-0.3 or angle>np.pi+0.3: # match blobs that forms a near straight line
                 continue
@@ -109,7 +110,7 @@ def search_comet(seq, comets, idx, x, y, idata, dist, timestamp):
             y.append(py)
             idata.append(idx)
             timestamp.append(seq["time"][idx])
-
+                        
             # Extrapolate ahead
             # Start position and time
             sx = x[0]
@@ -155,7 +156,7 @@ def search_comet(seq, comets, idx, x, y, idata, dist, timestamp):
                 y.pop()
                 timestamp.pop()
                 idata.pop()                    
-
+           
     return cometsFound
 
 def explore_sequence(seq):
@@ -177,7 +178,7 @@ def explore_sequence(seq):
     data_cube = np.empty((width,height,numImg))
 
     timestamps = [0] * numImg
-
+    Log(len(timestamps))
     for i in range(numImg):
         # read image and header from FITS file
         img, hdr = fits.getdata(seq["path"][i], header=True)
@@ -231,10 +232,10 @@ def explore_sequence(seq):
     if maxNum<1000: # Limit to max of 1000 of each frame, if it goes above this the thresholds are probably not set correctly
         cometsFound = []
         for ss in range(len(comets)-5):
-            if ss >= 0:
+            if ss>=0:
                 if DEBUG:
                     print("start index = " + str(ss) + " object tracks found = " + str(len(cometsFound)))
-                if len(cometsFound) > 20: # exit with many tracks, probably too much noise in frames
+                if len(cometsFound)>20: # exit with many tracks, probably too much noise in frames
                     break
                 cometsFound += search_comet(seq, comets, ss, x, y, idata, dist, tm)
 
@@ -336,8 +337,8 @@ def process_sequence(s):
 
 
 #######################################################################################
-folder_in = sys.argv[1]
-output_file = sys.argv[2]
+folder_in = "C:\\github\\nasa-comet\\win32\\data\\minitest" #sys.argv[1]
+output_file = "C:\\github\\nasa-comet\\win32\\data\\solution.csv" #sys.argv[2]
 
 data_set = []
 # Scan folder for all sequences
@@ -362,16 +363,27 @@ for (dirpath, dirnames, filenames) in os.walk(folder_in):
     if len(images)>0:
         data_set.append(seq)
 
-for i, s in enumerate(data_set):
-    s["progress"] = "Completed "+s["ID"]+" "+str(i+1)+"/"+str(len(data_set))
 
-pool = multiprocessing.Pool()
-result_async = [pool.apply_async(process_sequence, args = (s, )) for s in data_set]
-results = [r.get() for r in result_async]
+
+#pool = multiprocessing.Pool()
+#result_async = [pool.apply_async(process_sequence, args = (s, )) for s in data_set]
+#results = [r.get() for r in result_async]
+results = []
+for i, s in enumerate(data_set):
+    s['progress'] = "Completed "+s["ID"]+" "+str(i+1)+"/"+str(len(data_set))
+    results.append(process_sequence(s))
+
 with open(output_file, 'w') as f:
-    for r in results:
-        if len(r)>0:
-            f.writelines(r)
-            f.flush()
+    for seq in data_set:
+        for r in results:
+            if len(r)>0:
+                f.writelines(r)
+                f.flush()
+            
+            # imgstr = ','.join([str(item) for item in seq["images"]])
+            # pathstr = ','.join([str(item) for item in seq["path"]])
+            # str1 = seq["ID"] + "," + imgstr + "," + pathstr 
+            # f.writelines(str1)
+            # f.flush()
 
 

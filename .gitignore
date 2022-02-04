@@ -1,5 +1,11 @@
 # Ignore all train related fts file
 *.fts
+*.zip
 
 # Ignore all files under data folder
 code/data/
+train/
+train1/
+train10/
+train100/
+train1799/
